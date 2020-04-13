@@ -38,5 +38,7 @@ python main.py --mode train --para_limit 2250 --batch_size 24 --init_lr 0.1 --ke
 **_results_**
 | setting | split | answer EM | answer F1 | sup fact EM | sup fact F1 | joint EM | joint F1 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| distractor | dev | 41.8 | 55.8 | 17.5 | 61.3 | 8.7 | 36.3 | 
+| distractor | dev | 41.8 | 55.8 | 17.5 | 61.3 | 8.7 | 36.3 |
+| Full Wiki | dev | 16.0 | 24.0 | 1.78 | 21.9 | 0.87 | 7.60 | 
+
 
