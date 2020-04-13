@@ -28,6 +28,7 @@ As described in [HotPotQA paper](https://arxiv.org/pdf/1809.09600.pdf), the base
 ```
 python main.py --mode prepro --data_file hotpot_train_v1.1.json --para_limit 2250 --data_split train
 python main.py --mode prepro --data_file hotpot_dev_distractor_v1.json --para_limit 2250 --data_split dev
+python main.py --mode prepro --data_file hotpot_dev_fullwiki_v1.json --data_split dev --fullwiki --para_limit 2250
 ```
 
 **_training_**
