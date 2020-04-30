@@ -1,18 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Run BERT on SQuAD."""
+
 
 from __future__ import absolute_import
 from __future__ import division
@@ -35,17 +22,18 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, Sequentia
 from torch.utils.data.distributed import DistributedSampler
 
 import tokenization
-from modeling import BertConfig, BertClassifier, BertForQuestionAnswering, \
+from modeling import BertConfig, BertForQuestionAnswering, \
     BertForQuestionAnsweringWithKeyword
 from optimization import BERTAdam
 
 from prepro import get_dataloader, get_dataloader_given_examples
-from evaluate_qa import write_predictions
-from evaluate_span import write_predictions as span_write_predictions
 
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+logfile = '/home/tushar.abhishek/nlpa/major_project/multihopQA/src/models/decomRC/decomrc.log'
+logging.basicConfig(filename=os.path.abspath(logfile), filemode='a', format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
+#logging to standard output
+logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 logger = logging.getLogger(__name__)
 
 RawResult = collections.namedtuple("RawResult",
@@ -54,7 +42,7 @@ RawResult = collections.namedtuple("RawResult",
 
 def main():
     parser = argparse.ArgumentParser()
-    BERT_DIR = "/home/sewon/for-inference/model/uncased_L-12_H-768_A-12/"
+    BERT_DIR = "/scratch/tabhishek/uncased_L-12_H-768_A-12/"
     ## Required parameters
     parser.add_argument("--bert_config_file", default=BERT_DIR+"bert_config.json", \
                         type=str, help="The config json file corresponding to the pre-trained BERT model. "
@@ -80,8 +68,6 @@ def main():
     parser.add_argument("--max_seq_length", default=300, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
-    parser.add_argument("--doc_stride", default=128, type=int,
-                        help="When splitting up a long document into chunks, how much stride to take between chunks.")
     parser.add_argument("--max_query_length", default=64, type=int,
                         help="The maximum number of tokens for the question. Questions longer than this will "
                              "be truncated to this length.")
@@ -97,11 +83,6 @@ def main():
                              "of training.")
     parser.add_argument("--save_checkpoints_steps", default=1000, type=int,
                         help="How often to save the model checkpoint.")
-    parser.add_argument("--iterations_per_loop", default=1000, type=int,
-                        help="How many steps to make in each estimator call.")
-    parser.add_argument("--n_best_size", default=3, type=int,
-                        help="The total number of n-best predictions to generate in the nbest_predictions.json "
-                             "output file.")
     parser.add_argument("--max_answer_length", default=30, type=int,
                         help="The maximum length of an answer that can be generated. This is needed because the start "
                              "and end predictions are not conditioned on one another.")
@@ -215,15 +196,7 @@ def main():
                 tokenizer=tokenizer)
 
     #a = input()
-    if args.model == 'qa':
-        model = BertForQuestionAnswering(bert_config, 4)
-        metric_name = "F1"
-    elif args.model == 'classifier':
-        if args.reduce_layers != -1:
-            bert_config.num_hidden_layers = args.reduce_layers
-        model = BertClassifier(bert_config, 2, args.pooling)
-        metric_name = "F1"
-    elif args.model == "span-predictor":
+    if args.model == "span-predictor":
         if args.reduce_layers != -1:
             bert_config.num_hidden_layers = args.reduce_layers
         if args.with_key:
@@ -235,47 +208,32 @@ def main():
     else:
         raise NotImplementedError()
 
-    if args.init_checkpoint is not None and args.do_predict and \
-                len(args.init_checkpoint.split(','))>1:
-        assert args.model == "qa"
-        model = [model]
-        for i, checkpoint in enumerate(args.init_checkpoint.split(',')):
-            if i>0:
-                model.append(BertForQuestionAnswering(bert_config, 4))
-            print ("Loading from", checkpoint)
-            state_dict = torch.load(checkpoint, map_location='cpu')
+    if args.init_checkpoint is not None:
+        print ("Loading from", args.init_checkpoint)
+        state_dict = torch.load(args.init_checkpoint, map_location='cpu')
+        if args.reduce_layers != -1:
+            state_dict = {k:v for k, v in state_dict.items() \
+                if not '.'.join(k.split('.')[:3]) in \
+                ['encoder.layer.{}'.format(i) for i in range(args.reduce_layers, 12)]}
+        if args.do_predict:
             filter = lambda x: x[7:] if x.startswith('module.') else x
             state_dict = {filter(k):v for (k,v) in state_dict.items()}
-            model[-1].load_state_dict(state_dict)
-            model[-1].to(device)
+            model.load_state_dict(state_dict)
+        else:
+            model.bert.load_state_dict(state_dict)
+            if args.reduce_layers_to_tune != -1:
+                model.bert.embeddings.required_grad = False
+                n_layers = 12 if args.reduce_layers==-1 else args.reduce_layers
+                for i in range(n_layers - args.reduce_layers_to_tune):
+                    model.bert.encoder.layer[i].require_grad=False
 
-    else:
-        if args.init_checkpoint is not None:
-            print ("Loading from", args.init_checkpoint)
-            state_dict = torch.load(args.init_checkpoint, map_location='cpu')
-            if args.reduce_layers != -1:
-                state_dict = {k:v for k, v in state_dict.items() \
-                    if not '.'.join(k.split('.')[:3]) in \
-                    ['encoder.layer.{}'.format(i) for i in range(args.reduce_layers, 12)]}
-            if args.do_predict:
-                filter = lambda x: x[7:] if x.startswith('module.') else x
-                state_dict = {filter(k):v for (k,v) in state_dict.items()}
-                model.load_state_dict(state_dict)
-            else:
-                model.bert.load_state_dict(state_dict)
-                if args.reduce_layers_to_tune != -1:
-                    model.bert.embeddings.required_grad = False
-                    n_layers = 12 if args.reduce_layers==-1 else args.reduce_layers
-                    for i in range(n_layers - args.reduce_layers_to_tune):
-                        model.bert.encoder.layer[i].require_grad=False
+    model.to(device)
 
-        model.to(device)
-
-        if args.local_rank != -1:
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
-                                                            output_device=args.local_rank)
-        elif n_gpu > 1:
-            model = torch.nn.DataParallel(model)
+    if args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
+                                                        output_device=args.local_rank)
+    elif n_gpu > 1:
+        model = torch.nn.DataParallel(model)
 
     if args.do_train:
         no_decay = ['bias', 'gamma', 'beta']
@@ -345,107 +303,7 @@ def predict(args, model, eval_dataloader, eval_examples, eval_features, device, 
             write_prediction=True):
     all_results = []
 
-    assert args.model == "qa" or type(model) != list
-
-    if args.model == 'qa':
-
-        RawResult = collections.namedtuple("RawResult",
-                                   ["unique_id", "start_logits", "end_logits", "switch"])
-
-        def _get_raw_results(model1):
-            raw_results = []
-            for batch in tqdm(eval_dataloader, desc="Evaluating"):
-                example_indices = batch[-1]
-                batch_to_feed = [t.to(device) for t in batch[:-1]]
-                with torch.no_grad():
-                    batch_start_logits, batch_end_logits, batch_switch = model1(batch_to_feed)
-
-                for i, example_index in enumerate(example_indices):
-                    start_logits = batch_start_logits[i].detach().cpu().tolist()
-                    end_logits = batch_end_logits[i].detach().cpu().tolist()
-                    switch = batch_switch[i].detach().cpu().tolist()
-                    eval_feature = eval_features[example_index.item()]
-                    unique_id = int(eval_feature.unique_id)
-                    raw_results.append(RawResult(unique_id=unique_id,
-                                                start_logits=start_logits,
-                                                end_logits=end_logits,
-                                                switch=switch))
-            return raw_results
-        if type(model)==list:
-            all_raw_results = [_get_raw_results(m) for m in model]
-            for i in range(len(all_raw_results[0])):
-                result = [all_raw_result[i] for all_raw_result in all_raw_results]
-                assert all([r.unique_id == result[0].unique_id for r in result])
-                start_logits = sum([np.array(r.start_logits) for r in result]).tolist()
-                end_logits = sum([np.array(r.end_logits) for r in result]).tolist()
-                switch = sum([np.array(r.switch) for r in result]).tolist()
-                all_results.append(RawResult(unique_id=result[0].unique_id,
-                                             start_logits=start_logits,
-                                             end_logits=end_logits,
-                                             switch=switch))
-        else:
-            all_results = _get_raw_results(model)
-
-
-        output_prediction_file = os.path.join(args.output_dir, args.prefix+"predictions.json")
-        output_nbest_file = os.path.join(args.output_dir, args.prefix+"nbest_predictions.json")
-
-        f1 = write_predictions(logger, eval_examples, eval_features, all_results,
-                        args.n_best_size if write_prediction else 1,
-                        args.max_answer_length,
-                        args.do_lower_case,
-                        output_prediction_file if write_prediction else None,
-                        output_nbest_file if write_prediction else None,
-                        args.verbose_logging,
-                        write_prediction=write_prediction)
-        return f1
-
-    elif args.model=='classifier':
-
-        all_results = collections.defaultdict(list)
-        all_results_per_key = collections.defaultdict(list)
-        for batch in tqdm(eval_dataloader, desc="Evaluating"):
-            example_indices = batch[-1]
-            batch_to_feed = tuple(t.to(device) for t in batch[:-1])
-            with torch.no_grad():
-                batch_predicted_label = model(batch_to_feed)
-            for i, example_index in enumerate(example_indices):
-                logit = batch_predicted_label[i].detach().cpu().tolist()
-                eval_feature = eval_features[example_index.item()]
-                eval_example = eval_examples[eval_feature.example_index]
-                all_results[eval_example.qas_id].append( \
-                                (logit, eval_feature.switch, eval_example.all_answers,
-                                 eval_example.question_text))
-        for example_index, results in all_results.items():
-            example_index_, sent_index = example_index[:-2], example_index[-1]
-            logit = [0, 0]
-            switch = results[0][1]
-            f1 = results[0][2]
-            for (logit_, switch_, f1_, _) in results:
-                logit[0] += logit_[0]
-                logit[1] += logit_[1]
-                assert switch == switch_ and f1 == f1_
-            logit_indicator = (np.exp(logit)/sum(np.exp(logit))).tolist()[1]
-            #logit_indicator = logit[1]/np.linalg.norm(logit) #/len(results)
-            assert len(switch)==1 #and switch[0] == int(f1>0.6)
-            all_results_per_key[example_index_].append(( \
-                            logit_indicator, f1, int(sent_index), results[0][3]))
-        accs = {}
-        sents_scores = {}
-        for key, results in all_results_per_key.items():
-            ranked_labels = sorted(results, key=lambda x: (-x[0], x[2]))
-            acc = ranked_labels[0][1]
-            accs[key] = acc
-            sents_scores[key] = [r for r in sorted(results, key=lambda x: x[2])]
-        if write_prediction:
-            output_prediction_file = os.path.join(args.output_dir, args.prefix+"class_scores.json")
-            logger.info("Save score file into: "+output_prediction_file)
-            with open(output_prediction_file, "w") as f:
-                json.dump(sents_scores, f)
-
-        return np.mean(list(accs.values()))
-
-    elif args.model == "span-predictor":
+    if args.model == "span-predictor":
 
         RawResult = collections.namedtuple("RawResult",
                                    ["unique_id", "start_logits", "end_logits", "keyword_logits", "switch"])
@@ -531,8 +389,8 @@ def predict(args, model, eval_dataloader, eval_examples, eval_features, device, 
                         is_bridge=is_bridge)
 
         return np.mean(accs)
-
-    raise NotImplementedError()
+    else:
+        raise NotImplementedError()
 
 
 if __name__ == "__main__":
