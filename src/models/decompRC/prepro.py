@@ -98,10 +98,6 @@ def get_dataloader_given_examples(logger, args, examples, is_training, batch_siz
                         all_start_positions, all_end_positions, all_keyword_positions, all_switches, all_answer_mask)
             else:
                 raise NotImplementedError()
-        elif args.model.endswith("classifier"):
-            all_labels = torch.tensor([f.switch for f in train_features], dtype=torch.long)
-            dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
-                            all_labels)
         sampler=RandomSampler(dataset)
     else:
         all_example_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
@@ -181,14 +177,6 @@ def read_squad_examples(logger, input_file, subqueries_file, is_training, debug,
                 _input_data.append({'paragraphs':[{'context': context, 'qas': [qa1]}]})
 
         input_data = _input_data
-
-    if only_comp:
-        with open('/home/sewon/data/hotpotqa/hotpot_{}_v1.json'.format( \
-                                    'train' if is_training else 'dev_distractor'), 'r') as f:
-            orig_data = json.load(f)
-            id2type = {entry['_id'].split('-')[0]:entry['type'] for entry in orig_data}
-            id2type.update({k+"-inv":v for k, v in id2type.items()})
-
 
     examples = []
     for entry in tqdm(input_data):

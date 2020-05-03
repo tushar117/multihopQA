@@ -9,11 +9,13 @@ from prepro_util import find_span_from_text
 title_s = "<title>"
 title_e = "</title>"
 
-def save(data, dir_name, data_type):
-    if not os.path.isdir(os.path.join('data', dir_name)):
-        os.makedirs(os.path.join('data', dir_name))
+BASE_DIR = "/scratch/tabhishek/decomprc"
 
-    file_path = os.path.join('data', dir_name, '{}.json'.format(data_type))
+def save(data, dir_name, data_type):
+    if not os.path.isdir(os.path.join(BASE_DIR, 'data', dir_name)):
+        os.makedirs(os.path.join(BASE_DIR, 'data', dir_name))
+
+    file_path = os.path.join(BASE_DIR, 'data', dir_name, '{}.json'.format(data_type))
     with open(file_path, 'w') as f:
         print ("Saving {}".format(file_path))
         json.dump({'data': data}, f)
@@ -29,26 +31,6 @@ def main():
         save(training_data, 'hotpot-all', 'train')
         dev_data = load_hotpot(args,  'dev_distractor')
         save(dev_data, 'hotpot-all', 'dev')
-    elif args.task == 'hotpot-all-sf':
-        training_data = load_hotpot(args, 'train', only_sf=True)
-        save(training_data, 'hotpot-all-sf', 'train')
-        dev_data = load_hotpot(args, 'dev_distractor', only_sf=True)
-        save(dev_data, 'hotpot-all-sf', 'dev')
-    elif args.task == 'hotpot-gold-para':
-        training_data = load_hotpot(args, 'train', only_gold=True)
-        save(training_data, 'hotpot-gold-para', 'train')
-        dev_data = load_hotpot(args, 'dev_distractor', only_gold=True)
-        save(dev_data, 'hotpot-gold-para', 'dev')
-    elif args.task == 'hotpot-bridge':
-        training_data = load_hotpot(args,  'train', only_bridge=True)
-        save(training_data, 'hotpot-bridge', 'train')
-        dev_data = load_hotpot(args, 'dev_distractor', only_bridge=True)
-        save(dev_data, 'hotpot-bridge', 'dev')
-    elif args.task == 'hotpot-comparison':
-        training_data = load_hotpot(args, 'train', only_comparison=True)
-        save(training_data, 'hotpot-comparison', 'train')
-        dev_data = load_hotpot(args, 'dev_distractor', only_comparison=True)
-        save(dev_data, 'hotpot-comparison', 'dev')
     else:
         raise NotImplementedError()
 
