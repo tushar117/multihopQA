@@ -43,3 +43,9 @@ python main.py --mode train --para_limit 2250 --batch_size 24 --init_lr 0.1 --ke
 | Full Wiki | dev | 16.0 | 24.0 | 1.78 | 21.9 | 0.87 | 7.60 | 
 
 
+### Model weights
+The weights of models implemented in this repository can be found [here](https://iiitaphyd-my.sharepoint.com/:f:/g/personal/vivek_k_research_iiit_ac_in/Ej1Hjz2IVKtBpUJy-YR0760BrtmKw-dhQCGA3QdcBiwHVg?e=AjViUJ)  
+
+
+
+
